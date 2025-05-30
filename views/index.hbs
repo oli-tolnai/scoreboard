@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tournament Scoreboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .view-container {
+            width: 100vw;
+            height: 100vh;
+            display: none;
+            transition: all 0.5s ease-in-out;
+        }
+
+        .view-container.active {
+            display: flex;
+        }
+
+        /* Logo View */
+        .logo-view {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .logo-container img {
+            max-width: 60%;
+            max-height: 60%;
+            object-fit: contain;
+        }
+
+        /* Table View */
+        .table-view {
+            background: #f8f9fa;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .scores-table {
+            font-size: 1.2em;
+        }
+
+        .scores-table th {
+            background: #343a40;
+            color: white;
+            text-align: center;
+            padding: 15px 10px;
+        }
+
+        .scores-table td {
+            text-align: center;
+            padding: 12px 10px;
+            border: 1px solid #dee2e6;
+        }
+
+        .team-name {
+            font-weight: bold;
+            background: #e9ecef;
+        }
+
+        .total-score {
+            font-weight: bold;
+            background: #d4edda;
+            color: #155724;
+        }
+
+        /* Scoreboard View */
+        .scoreboard-view {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            flex-direction: column;
+            padding: 20px;
+            color: white;
+        }
+
+        .scoreboard-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .scoreboard-list {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .team-rank {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 30px;
+            margin: 5px 0;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            transform: translateY(100vh);
+            opacity: 0;
+            transition: all 0.8s ease-out;
+        }
+
+        .team-rank.visible {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .rank-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #ffd700;
+        }
+
+        .team-info {
+            flex: 1;
+            text-align: center;
+        }
+
+        .team-rank-name {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+
+        .team-score {
+            font-size: 2em;
+            font-weight: bold;
+            color: #90ee90;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        .fade-out {
+            animation: fadeOut 0.5s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; transform: scale(1); }
+            to { opacity: 0; transform: scale(0.9); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Logo View -->
+    <div id="logoView" class="view-container logo-view active">
+        <div class="logo-container">
+            <img src="/logo.png" alt="Tournament Logo" class="img-fluid">
+        </div>
+    </div>
+
+    <!-- Table View -->
+    <div id="tableView" class="view-container table-view">
+        <div class="container-fluid">
+            <h1 class="text-center mb-4">Tournament Scores</h1>
+            <div class="table-responsive">
+                <table id="scoresTable" class="table table-striped scores-table">
+                    <thead>
+                        <tr>
+                            <th>Team</th>
+                            <!-- Tasks will be inserted here -->
+                            <th>Total Score</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Team rows will be inserted here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scoreboard View -->
+    <div id="scoreboardView" class="view-container scoreboard-view">
+        <div class="scoreboard-header">
+            <h1 class="display-3">Tournament Leaderboard</h1>
+        </div>
+        <div id="scoreboardList" class="scoreboard-list">
+            <!-- Rankings will be inserted here -->
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentState = null;
+
+        // Socket event listeners
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        socket.on('stateUpdate', (state) => {
+            console.log('State update received:', state);
+            currentState = state;
+            updateDisplays();
+        });
+
+        socket.on('viewChange', (data) => {
+            console.log('View change:', data.view);
+            changeView(data.view);
+        });
+
+        socket.on('animateScoreboard', () => {
+            console.log('Animating scoreboard');
+            animateScoreboard();
+        });
+
+        function changeView(view) {
+            // Hide all views
+            document.querySelectorAll('.view-container').forEach(container => {
+                container.classList.remove('active');
+                container.classList.add('fade-out');
+            });
+
+            // Show the target view after fade out
+            setTimeout(() => {
+                document.querySelectorAll('.view-container').forEach(container => {
+                    container.classList.remove('fade-out');
+                });
+
+                const targetView = document.getElementById(view + 'View');
+                if (targetView) {
+                    targetView.classList.add('active', 'fade-in');
+                    setTimeout(() => {
+                        targetView.classList.remove('fade-in');
+                    }, 500);
+                }
+            }, 250);
+        }
+
+        function updateDisplays() {
+            if (!currentState) return;
+
+            updateTableView();
+            updateScoreboardView();
+        }
+
+        function updateTableView() {
+            const table = document.getElementById('scoresTable');
+            const thead = table.querySelector('thead tr');
+            const tbody = table.querySelector('tbody');
+
+            // Clear existing content
+            thead.innerHTML = '<th class="team-name">Team</th>';
+            tbody.innerHTML = '';
+
+            // Add task columns
+            currentState.tasks.forEach(task => {
+                const th = document.createElement('th');
+                th.textContent = task.name;
+                thead.appendChild(th);
+            });
+
+            // Add total score column
+            const totalTh = document.createElement('th');
+            totalTh.textContent = 'Total Score';
+            totalTh.className = 'total-score';
+            thead.appendChild(totalTh);
+
+            // Add team rows
+            currentState.teams.forEach(team => {
+                const row = document.createElement('tr');
+                
+                // Team name
+                const teamCell = document.createElement('td');
+                teamCell.textContent = team.name;
+                teamCell.className = 'team-name';
+                row.appendChild(teamCell);
+
+                // Task scores
+                currentState.tasks.forEach(task => {
+                    const scoreCell = document.createElement('td');
+                    scoreCell.textContent = team.scores[task.id] || 0;
+                    row.appendChild(scoreCell);
+                });
+
+                // Total score
+                const totalCell = document.createElement('td');
+                totalCell.textContent = team.totalScore || 0;
+                totalCell.className = 'total-score';
+                row.appendChild(totalCell);
+
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateScoreboardView() {
+            const container = document.getElementById('scoreboardList');
+            container.innerHTML = '';
+
+            const sortedTeams = [...currentState.teams].sort((a, b) => b.totalScore - a.totalScore);
+
+            sortedTeams.forEach((team, index) => {
+                const rankDiv = document.createElement('div');
+                rankDiv.className = 'team-rank';
+                
+                rankDiv.innerHTML = `
+                    <div class="rank-number">#${index + 1}</div>
+                    <div class="team-info">
+                        <div class="team-rank-name">${team.name}</div>
+                    </div>
+                    <div class="team-score">${team.totalScore || 0}</div>
+                `;
+
+                container.appendChild(rankDiv);
+            });
+        }
+
+        function animateScoreboard() {
+            const rankElements = document.querySelectorAll('.team-rank');
+            
+            // Reset all animations
+            rankElements.forEach(element => {
+                element.classList.remove('visible');
+            });
+
+            // Animate from bottom to top with delay
+            const reversedElements = Array.from(rankElements).reverse();
+            reversedElements.forEach((element, index) => {
+                setTimeout(() => {
+                    element.classList.add('visible');
+                }, index * 500);
+            });
+        }
+
+        // Initialize display
+        updateDisplays();
+    </script>
+</body>
+</html>
